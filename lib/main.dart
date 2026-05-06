@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'providers/appointment_provider.dart';
@@ -8,11 +9,13 @@ import 'theme/app_theme.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Force portrait orientation
-  await SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-    DeviceOrientation.portraitDown,
-  ]);
+  // Force portrait orientation (only meaningful on mobile)
+  if (!kIsWeb) {
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
+  }
 
   // Status bar style
   SystemChrome.setSystemUIOverlayStyle(

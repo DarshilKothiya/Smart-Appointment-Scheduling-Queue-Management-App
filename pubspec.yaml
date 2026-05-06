@@ -13,9 +13,11 @@ dependencies:
   # State Management
   provider: ^6.1.2
 
-  # Local Database
-  sqflite: ^2.3.3+1
+  # Local Database (cross-platform: mobile + web, pure Dart)
+  sembast: ^3.8.5+1
+  sembast_web: ^2.4.2
   path: ^1.9.0
+  path_provider: ^2.1.5
 
   # Unique IDs
   uuid: ^4.4.0
@@ -34,7 +36,6 @@ dependencies:
 
   # Icons
   cupertino_icons: ^1.0.6
-
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -1,4 +1,7 @@
-import 'package:sqflite/sqflite.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:sembast/sembast_io.dart';
+import 'package:sembast_web/sembast_web.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart';
 import '../models/appointment.dart';
 import '../models/enums.dart';
@@ -10,8 +13,12 @@ class DatabaseService {
 
   static Database? _database;
 
-  static const String _tableName = 'appointments';
-  static const String _counterTable = 'counters';
+  static const String _appointmentsStore = 'appointments';
+  static const String _countersStore = 'counters';
+
+  // Sembast stores
+  final _appointments = stringMapStoreFactory.store(_appointmentsStore);
+  final _counters = stringMapStoreFactory.store(_countersStore);
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -20,67 +27,29 @@ class DatabaseService {
   }
 
   Future<Database> _initDatabase() async {
-    final dbPath = await getDatabasesPath();
-    final path = join(dbPath, 'smart_appointment.db');
-
-    return await openDatabase(
-      path,
-      version: 1,
-      onCreate: _createDB,
-    );
+    if (kIsWeb) {
+      // Web: sembast uses IndexedDB, no config needed
+      return await databaseFactoryWeb.openDatabase('smart_appointment.db');
+    } else {
+      // Mobile / Desktop: sembast uses a plain file
+      final appDir = await getApplicationDocumentsDirectory();
+      final dbPath = join(appDir.path, 'smart_appointment.db');
+      return await databaseFactoryIo.openDatabase(dbPath);
+    }
   }
 
-  Future<void> _createDB(Database db, int version) async {
-    await db.execute('''
-      CREATE TABLE $_tableName (
-        id TEXT PRIMARY KEY,
-        appointmentId TEXT NOT NULL,
-        name TEXT NOT NULL,
-        serviceType TEXT NOT NULL,
-        date TEXT NOT NULL,
-        timeSlot TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'scheduled',
-        queuePosition INTEGER NOT NULL DEFAULT 0,
-        estimatedWaitMinutes INTEGER NOT NULL DEFAULT 0,
-        createdAt TEXT NOT NULL,
-        isSynced INTEGER NOT NULL DEFAULT 0
-      )
-    ''');
+  // ─── Counter helpers ────────────────────────────────────────────────────────
 
-    await db.execute('''
-      CREATE TABLE $_counterTable (
-        key TEXT PRIMARY KEY,
-        value INTEGER NOT NULL DEFAULT 0
-      )
-    ''');
-
-    // Initialize appointment counter
-    await db.insert(_counterTable, {'key': 'appointment_count', 'value': 0});
-  }
-
-  // Get next appointment number for human-readable ID
   Future<int> _getNextAppointmentNumber() async {
     final db = await database;
-    final result = await db.query(
-      _counterTable,
-      where: 'key = ?',
-      whereArgs: ['appointment_count'],
-    );
-
-    int current = 0;
-    if (result.isNotEmpty) {
-      current = result.first['value'] as int;
-    }
-
-    final next = current + 1;
-    await db.update(
-      _counterTable,
-      {'value': next},
-      where: 'key = ?',
-      whereArgs: ['appointment_count'],
-    );
-
-    return next;
+    return db.transaction((txn) async {
+      final record = _counters.record('appointment_count');
+      final existing = await record.get(txn);
+      final current = (existing?['value'] as int?) ?? 0;
+      final next = current + 1;
+      await record.put(txn, {'value': next});
+      return next;
+    });
   }
 
   Future<String> generateAppointmentId() async {
@@ -88,223 +57,239 @@ class DatabaseService {
     return 'APT-${num.toString().padLeft(4, '0')}';
   }
 
-  // INSERT
+  // ─── CRUD ───────────────────────────────────────────────────────────────────
+
   Future<void> insertAppointment(Appointment appointment) async {
     final db = await database;
-    await db.insert(
-      _tableName,
-      appointment.toMap(),
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await _appointments.record(appointment.id).put(db, _toSembastMap(appointment));
   }
 
-  // GET ALL
   Future<List<Appointment>> getAllAppointments() async {
     final db = await database;
-    final maps = await db.query(
-      _tableName,
-      orderBy: 'queuePosition ASC, createdAt ASC',
+    final snapshots = await _appointments.find(
+      db,
+      finder: Finder(sortOrders: [
+        SortOrder('queuePosition'),
+        SortOrder('createdAt'),
+      ]),
     );
-    return maps.map((map) => Appointment.fromMap(map)).toList();
+    return snapshots.map((s) => _fromSembastMap(s.value)).toList();
   }
 
-  // GET BY ID
   Future<Appointment?> getAppointmentById(String id) async {
     final db = await database;
-    final maps = await db.query(
-      _tableName,
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-    if (maps.isEmpty) return null;
-    return Appointment.fromMap(maps.first);
+    final snapshot = await _appointments.record(id).get(db);
+    if (snapshot == null) return null;
+    return _fromSembastMap(snapshot);
   }
 
-  // GET BY APPOINTMENT ID (human-readable)
   Future<Appointment?> getByAppointmentId(String appointmentId) async {
     final db = await database;
-    final maps = await db.query(
-      _tableName,
-      where: 'appointmentId = ?',
-      whereArgs: [appointmentId],
+    final snapshots = await _appointments.find(
+      db,
+      finder: Finder(filter: Filter.equals('appointmentId', appointmentId)),
     );
-    if (maps.isEmpty) return null;
-    return Appointment.fromMap(maps.first);
+    if (snapshots.isEmpty) return null;
+    return _fromSembastMap(snapshots.first.value);
   }
 
-  // UPDATE
   Future<void> updateAppointment(Appointment appointment) async {
     final db = await database;
-    await db.update(
-      _tableName,
-      appointment.toMap(),
-      where: 'id = ?',
-      whereArgs: [appointment.id],
-    );
+    await _appointments.record(appointment.id).put(db, _toSembastMap(appointment));
   }
 
-  // DELETE
   Future<void> deleteAppointment(String id) async {
     final db = await database;
-    await db.delete(
-      _tableName,
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    await _appointments.record(id).delete(db);
   }
 
-  // CHECK SLOT AVAILABILITY
+  // ─── Slot availability ──────────────────────────────────────────────────────
+
   Future<bool> isSlotAvailable(
-      DateTime date, String timeSlot, {String? excludeId, int maxPerSlot = 1}) async {
+    DateTime date,
+    String timeSlot, {
+    String? excludeId,
+    int maxPerSlot = 1,
+  }) async {
     final db = await database;
+    final datePrefix = date.toIso8601String().substring(0, 10);
 
-    String whereClause =
-        "date LIKE ? AND timeSlot = ? AND status != 'cancelled'";
-    List<dynamic> whereArgs = ['${date.toIso8601String().substring(0, 10)}%', timeSlot];
+    final snapshots = await _appointments.find(db);
+    final matching = snapshots.where((s) {
+      final m = s.value;
+      if ((m['date'] as String).startsWith(datePrefix) == false) return false;
+      if (m['timeSlot'] != timeSlot) return false;
+      if (m['status'] == 'cancelled') return false;
+      if (excludeId != null && m['id'] == excludeId) return false;
+      return true;
+    }).toList();
 
-    if (excludeId != null) {
-      whereClause += ' AND id != ?';
-      whereArgs.add(excludeId);
-    }
-
-    final maps = await db.query(
-      _tableName,
-      where: whereClause,
-      whereArgs: whereArgs,
-    );
-
-    return maps.length < maxPerSlot;
+    return matching.length < maxPerSlot;
   }
 
-  // GET APPOINTMENTS BY DATE
+  // ─── Queries ─────────────────────────────────────────────────────────────────
+
   Future<List<Appointment>> getAppointmentsByDate(DateTime date) async {
     final db = await database;
-    final dateStr = date.toIso8601String().substring(0, 10);
-    final maps = await db.query(
-      _tableName,
-      where: "date LIKE ? AND status != 'cancelled'",
-      whereArgs: ['$dateStr%'],
-      orderBy: 'queuePosition ASC',
+    final datePrefix = date.toIso8601String().substring(0, 10);
+    final snapshots = await _appointments.find(
+      db,
+      finder: Finder(
+        filter: Filter.and([
+          Filter.custom((r) => (r['date'] as String).startsWith(datePrefix)),
+          Filter.not(Filter.equals('status', 'cancelled')),
+        ]),
+        sortOrders: [SortOrder('queuePosition')],
+      ),
     );
-    return maps.map((map) => Appointment.fromMap(map)).toList();
+    return snapshots.map((s) => _fromSembastMap(s.value)).toList();
   }
 
-  // GET QUEUE (active appointments only)
   Future<List<Appointment>> getActiveQueue() async {
     final db = await database;
-    final maps = await db.query(
-      _tableName,
-      where: "status IN ('scheduled', 'in_progress')",
-      orderBy: 'queuePosition ASC',
+    final snapshots = await _appointments.find(
+      db,
+      finder: Finder(
+        filter: Filter.or([
+          Filter.equals('status', 'scheduled'),
+          Filter.equals('status', 'in_progress'),
+        ]),
+        sortOrders: [SortOrder('queuePosition')],
+      ),
     );
-    return maps.map((map) => Appointment.fromMap(map)).toList();
+    return snapshots.map((s) => _fromSembastMap(s.value)).toList();
   }
 
-  // GET CURRENT IN-PROGRESS
   Future<Appointment?> getCurrentInProgress() async {
     final db = await database;
-    final maps = await db.query(
-      _tableName,
-      where: "status = 'in_progress'",
-      limit: 1,
+    final snapshots = await _appointments.find(
+      db,
+      finder: Finder(
+        filter: Filter.equals('status', 'in_progress'),
+        limit: 1,
+      ),
     );
-    if (maps.isEmpty) return null;
-    return Appointment.fromMap(maps.first);
+    if (snapshots.isEmpty) return null;
+    return _fromSembastMap(snapshots.first.value);
   }
 
-  // GET UNSYNCED
   Future<List<Appointment>> getUnsyncedAppointments() async {
     final db = await database;
-    final maps = await db.query(
-      _tableName,
-      where: 'isSynced = 0',
+    final snapshots = await _appointments.find(
+      db,
+      finder: Finder(filter: Filter.equals('isSynced', 0)),
     );
-    return maps.map((map) => Appointment.fromMap(map)).toList();
+    return snapshots.map((s) => _fromSembastMap(s.value)).toList();
   }
 
-  // MARK AS SYNCED
   Future<void> markAsSynced(String id) async {
     final db = await database;
-    await db.update(
-      _tableName,
-      {'isSynced': 1},
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    await _appointments.record(id).update(db, {'isSynced': 1});
   }
 
-  // SEARCH
   Future<List<Appointment>> searchAppointments(String query) async {
     final db = await database;
-    final maps = await db.query(
-      _tableName,
-      where: 'name LIKE ? OR appointmentId LIKE ?',
-      whereArgs: ['%$query%', '%$query%'],
-      orderBy: 'createdAt DESC',
+    final lower = query.toLowerCase();
+    final snapshots = await _appointments.find(
+      db,
+      finder: Finder(
+        filter: Filter.custom((r) {
+          final name = (r['name'] as String? ?? '').toLowerCase();
+          final apptId = (r['appointmentId'] as String? ?? '').toLowerCase();
+          return name.contains(lower) || apptId.contains(lower);
+        }),
+        sortOrders: [SortOrder('createdAt', false)],
+      ),
     );
-    return maps.map((map) => Appointment.fromMap(map)).toList();
+    return snapshots.map((s) => _fromSembastMap(s.value)).toList();
   }
 
-  // FILTER
   Future<List<Appointment>> filterAppointments({
     DateTime? date,
     AppointmentStatus? status,
     ServiceType? serviceType,
   }) async {
     final db = await database;
-    List<String> conditions = [];
-    List<dynamic> args = [];
+    final List<Filter> filters = [];
 
     if (date != null) {
-      conditions.add("date LIKE ?");
-      args.add('${date.toIso8601String().substring(0, 10)}%');
+      final datePrefix = date.toIso8601String().substring(0, 10);
+      filters.add(Filter.custom((r) => (r['date'] as String).startsWith(datePrefix)));
     }
     if (status != null) {
-      conditions.add("status = ?");
-      args.add(status.value);
+      filters.add(Filter.equals('status', status.value));
     }
     if (serviceType != null) {
-      conditions.add("serviceType = ?");
-      args.add(serviceType.value);
+      filters.add(Filter.equals('serviceType', serviceType.value));
     }
 
-    final whereClause = conditions.isEmpty ? null : conditions.join(' AND ');
-
-    final maps = await db.query(
-      _tableName,
-      where: whereClause,
-      whereArgs: args.isEmpty ? null : args,
-      orderBy: 'createdAt DESC',
+    final finder = Finder(
+      filter: filters.isEmpty ? null : Filter.and(filters),
+      sortOrders: [SortOrder('createdAt', false)],
     );
-    return maps.map((map) => Appointment.fromMap(map)).toList();
+
+    final snapshots = await _appointments.find(db, finder: finder);
+    return snapshots.map((s) => _fromSembastMap(s.value)).toList();
   }
 
-  // REORDER QUEUE (after cancel/complete)
+  // ─── Queue reordering ───────────────────────────────────────────────────────
+
   Future<void> reorderQueue() async {
     final db = await database;
-    final maps = await db.query(
-      _tableName,
-      where: "status = 'scheduled'",
-      orderBy: 'queuePosition ASC, createdAt ASC',
+    final snapshots = await _appointments.find(
+      db,
+      finder: Finder(
+        filter: Filter.equals('status', 'scheduled'),
+        sortOrders: [SortOrder('queuePosition'), SortOrder('createdAt')],
+      ),
     );
 
-    for (int i = 0; i < maps.length; i++) {
-      final id = maps[i]['id'] as String;
-      await db.update(
-        _tableName,
-        {
+    await db.transaction((txn) async {
+      for (int i = 0; i < snapshots.length; i++) {
+        await _appointments.record(snapshots[i].key).update(txn, {
           'queuePosition': i + 1,
-          'estimatedWaitMinutes': (i) * 15,
-        },
-        where: 'id = ?',
-        whereArgs: [id],
-      );
-    }
+          'estimatedWaitMinutes': i * 15,
+        });
+      }
+    });
   }
 
   Future<void> closeDatabase() async {
-    final db = await database;
-    await db.close();
+    await _database?.close();
     _database = null;
+  }
+
+  // ─── Serialization helpers ──────────────────────────────────────────────────
+
+  Map<String, dynamic> _toSembastMap(Appointment a) {
+    return {
+      'id': a.id,
+      'appointmentId': a.appointmentId,
+      'name': a.name,
+      'serviceType': a.serviceType.value,
+      'date': a.date.toIso8601String(),
+      'timeSlot': a.timeSlot,
+      'status': a.status.value,
+      'queuePosition': a.queuePosition,
+      'estimatedWaitMinutes': a.estimatedWaitMinutes,
+      'createdAt': a.createdAt.toIso8601String(),
+      'isSynced': a.isSynced ? 1 : 0,
+    };
+  }
+
+  Appointment _fromSembastMap(Map<String, dynamic> m) {
+    return Appointment(
+      id: m['id'] as String,
+      appointmentId: m['appointmentId'] as String,
+      name: m['name'] as String,
+      serviceType: ServiceType.fromString(m['serviceType'] as String),
+      date: DateTime.parse(m['date'] as String),
+      timeSlot: m['timeSlot'] as String,
+      status: AppointmentStatus.fromString(m['status'] as String),
+      queuePosition: (m['queuePosition'] as int?) ?? 0,
+      estimatedWaitMinutes: (m['estimatedWaitMinutes'] as int?) ?? 0,
+      createdAt: DateTime.parse(m['createdAt'] as String),
+      isSynced: ((m['isSynced'] as int?) ?? 0) == 1,
+    );
   }
 }

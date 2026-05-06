@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../models/enums.dart';
 import '../providers/appointment_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/queue_meter.dart';
@@ -273,7 +274,7 @@ class _QueueItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isServing = appointment.status.name == 'inProgress';
+    final isServing = appointment.status == AppointmentStatus.inProgress;
 
     return GestureDetector(
       onTap: onTap,
