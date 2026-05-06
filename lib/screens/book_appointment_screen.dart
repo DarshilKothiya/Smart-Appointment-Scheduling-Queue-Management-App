@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../providers/appointment_provider.dart';
+import '../providers/auth_provider.dart';
 import '../models/enums.dart';
 import '../theme/app_theme.dart';
 
@@ -36,6 +37,9 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen>
   @override
   void initState() {
     super.initState();
+    final auth = context.read<AuthProvider>();
+    _nameController.text = auth.userName.isEmpty ? 'User' : auth.userName;
+
     _animController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 600),
@@ -232,10 +236,14 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen>
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: _nameController,
-                  style: const TextStyle(color: AppTheme.textPrimary),
-                  decoration: const InputDecoration(
-                    hintText: 'Enter your full name',
-                    prefixIcon: Icon(Icons.person_outline_rounded),
+                  readOnly: true, // Prevents typing another name
+                  style: TextStyle(
+                      color: AppTheme.textPrimary.withValues(alpha: 0.7)),
+                  decoration: InputDecoration(
+                    hintText: 'Your name',
+                    prefixIcon: const Icon(Icons.person_outline_rounded),
+                    filled: true,
+                    fillColor: AppTheme.bgCardLight.withValues(alpha: 0.5),
                   ),
                   validator: (v) {
                     if (v == null || v.trim().isEmpty) {

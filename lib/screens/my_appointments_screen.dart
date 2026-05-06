@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/appointment_provider.dart';
+import '../providers/auth_provider.dart';
 import '../models/enums.dart';
 import '../theme/app_theme.dart';
 import '../widgets/appointment_card.dart';
@@ -39,8 +40,15 @@ class _MyAppointmentsScreenState extends State<MyAppointmentsScreen> {
           ),
         ],
       ),
-      body: Consumer<AppointmentProvider>(
-        builder: (context, provider, _) {
+      body: Consumer2<AuthProvider, AppointmentProvider>(
+        builder: (context, auth, provider, _) {
+          final displayAppointments = auth.isAdmin
+              ? provider.appointments
+              : provider.appointments
+                  .where((a) =>
+                      a.name.toLowerCase() == auth.userName.toLowerCase())
+                  .toList();
+
           return Column(
             children: [
               // Search bar
@@ -83,7 +91,7 @@ class _MyAppointmentsScreenState extends State<MyAppointmentsScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      '${provider.appointments.length} appointment${provider.appointments.length != 1 ? 's' : ''}',
+                      '${displayAppointments.length} appointment${displayAppointments.length != 1 ? 's' : ''}',
                       style: const TextStyle(
                           fontSize: 13, color: AppTheme.textMuted),
                     ),
@@ -111,7 +119,7 @@ class _MyAppointmentsScreenState extends State<MyAppointmentsScreen> {
                     ? const Center(
                         child: CircularProgressIndicator(
                             color: AppTheme.primaryColor))
-                    : provider.appointments.isEmpty
+                    : displayAppointments.isEmpty
                         ? EmptyState(
                             title: 'No appointments found',
                             subtitle: _hasActiveFilters(provider)
@@ -134,9 +142,9 @@ class _MyAppointmentsScreenState extends State<MyAppointmentsScreen> {
                             backgroundColor: AppTheme.bgCard,
                             child: ListView.builder(
                               padding: const EdgeInsets.only(bottom: 100),
-                              itemCount: provider.appointments.length,
+                              itemCount: displayAppointments.length,
                               itemBuilder: (context, i) {
-                                final appt = provider.appointments[i];
+                                final appt = displayAppointments[i];
                                 return AppointmentCard(
                                   appointment: appt,
                                   showQueueBadge: true,

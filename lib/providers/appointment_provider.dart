@@ -106,6 +106,21 @@ class AppointmentProvider extends ChangeNotifier {
       );
     }
 
+    // Prevent multiple active appointments for the same user
+    final trimmedName = name.trim().toLowerCase();
+    final hasActiveAppointment = _appointments.any((a) =>
+        a.name.toLowerCase() == trimmedName &&
+        (a.status == AppointmentStatus.scheduled ||
+            a.status == AppointmentStatus.inProgress));
+
+    if (hasActiveAppointment) {
+      return (
+        success: false,
+        message: 'You already have an active appointment. Please complete or cancel it before booking another.',
+        appointment: null
+      );
+    }
+
     // Conflict check
     final slotAvailable = await _db.isSlotAvailable(date, timeSlot);
     if (!slotAvailable) {

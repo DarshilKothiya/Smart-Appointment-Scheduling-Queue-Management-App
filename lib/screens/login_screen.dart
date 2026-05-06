@@ -104,8 +104,6 @@ class _LoginScreenState extends State<LoginScreen>
                     _buildLoginCard(),
                     const SizedBox(height: 24),
 
-                    // ── Demo credentials hint ────────────────────────────
-                    _buildDemoHint(),
                     const SizedBox(height: 32),
                   ],
                 ),
@@ -342,63 +340,6 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
-  Widget _buildDemoHint() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1A1535),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF2A2840)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.info_outline_rounded,
-                  size: 15, color: AppTheme.textMuted),
-              const SizedBox(width: 6),
-              Text(
-                'Demo Credentials',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: AppTheme.textMuted,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: _CredentialTile(
-                  role: 'User',
-                  username: 'user',
-                  password: 'user123',
-                  icon: Icons.person_rounded,
-                  color: AppTheme.primaryColor,
-                  onTap: () => _fillCredentials('user', 'user123'),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _CredentialTile(
-                  role: 'Admin',
-                  username: 'admin',
-                  password: 'admin123',
-                  icon: Icons.admin_panel_settings_rounded,
-                  color: AppTheme.warningColor,
-                  onTap: () => _fillCredentials('admin', 'admin123'),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildLabel(String text) {
     return Text(
       text,
@@ -417,68 +358,6 @@ class _LoginScreenState extends State<LoginScreen>
     return InputDecoration(
       hintText: hint,
       prefixIcon: Icon(icon, size: 20),
-    );
-  }
-}
-
-// ── Credential quick-fill tile ───────────────────────────────────────────────
-class _CredentialTile extends StatelessWidget {
-  final String role;
-  final String username;
-  final String password;
-  final IconData icon;
-  final Color color;
-  final VoidCallback onTap;
-
-  const _CredentialTile({
-    required this.role,
-    required this.username,
-    required this.password,
-    required this.icon,
-    required this.color,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.08),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withOpacity(0.25)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(icon, size: 14, color: color),
-                const SizedBox(width: 5),
-                Text(role,
-                    style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: color)),
-              ],
-            ),
-            const SizedBox(height: 5),
-            Text(username,
-                style: const TextStyle(
-                    fontSize: 11, color: AppTheme.textPrimary)),
-            Text(password,
-                style:
-                    const TextStyle(fontSize: 10, color: AppTheme.textMuted)),
-            const SizedBox(height: 4),
-            Text(
-              'Tap to fill →',
-              style: TextStyle(fontSize: 9, color: color.withOpacity(0.8)),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

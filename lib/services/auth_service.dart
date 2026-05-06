@@ -9,11 +9,15 @@ class AuthService {
   static const Map<String, String> _userCredentials = {
     'user': 'user123',
     'admin': 'admin123',
+    'prem': 'prem123',
+    'darshil': 'darshil123',
   };
 
   static const Map<String, String> _roleMap = {
     'user': 'user',
     'admin': 'admin',
+    'prem': 'user',
+    'darshil': 'user',
   };
 
   // ── Login ─────────────────────────────────────────────────────────────────
