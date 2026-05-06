@@ -328,47 +328,95 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen>
                 // Time Slot
                 _SectionLabel(label: 'Time Slot'),
                 const SizedBox(height: 8),
-                SizedBox(
-                  height: 44,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: _timeSlots.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: 8),
-                    itemBuilder: (context, i) {
-                      final slot = _timeSlots[i];
-                      final selected = slot == _selectedTimeSlot;
-                      return GestureDetector(
-                        onTap: () =>
-                            setState(() => _selectedTimeSlot = slot),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 10),
-                          decoration: BoxDecoration(
-                            color: selected
-                                ? AppTheme.primaryColor
-                                : AppTheme.bgCardLight,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: selected
-                                  ? AppTheme.primaryColor
-                                  : const Color(0xFF2A2840),
-                            ),
-                          ),
-                          child: Text(
-                            slot,
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                              color: selected
-                                  ? Colors.white
-                                  : AppTheme.textSecondary,
-                            ),
-                          ),
-                        ),
+                Consumer<AppointmentProvider>(
+                  builder: (context, provider, _) {
+                    final datePrefix = _selectedDate.toIso8601String().substring(0, 10);
+                    final bookedSlots = provider.allAppointments
+                        .where((a) =>
+                            a.date.toIso8601String().startsWith(datePrefix) &&
+                            a.status != AppointmentStatus.cancelled)
+                        .map((a) => a.timeSlot)
+                        .toSet();
+
+                    // Auto-select first available if current is booked
+                    if (bookedSlots.contains(_selectedTimeSlot)) {
+                      final firstAvailable = _timeSlots.firstWhere(
+                        (slot) => !bookedSlots.contains(slot),
+                        orElse: () => '',
                       );
-                    },
-                  ),
+                      if (firstAvailable.isNotEmpty) {
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (mounted) {
+                            setState(() => _selectedTimeSlot = firstAvailable);
+                          }
+                        });
+                      }
+                    }
+
+                    return SizedBox(
+                      height: 44,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _timeSlots.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 8),
+                        itemBuilder: (context, i) {
+                          final slot = _timeSlots[i];
+                          final isBooked = bookedSlots.contains(slot);
+                          final selected = slot == _selectedTimeSlot;
+
+                          return GestureDetector(
+                            onTap: isBooked
+                                ? null
+                                : () => setState(() => _selectedTimeSlot = slot),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: isBooked
+                                    ? AppTheme.bgCard
+                                    : selected
+                                        ? AppTheme.primaryColor
+                                        : AppTheme.bgCardLight,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: isBooked
+                                      ? Colors.transparent
+                                      : selected
+                                          ? AppTheme.primaryColor
+                                          : const Color(0xFF2A2840),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (isBooked) ...[
+                                    Icon(Icons.block_rounded,
+                                        size: 12,
+                                        color: AppTheme.textMuted.withValues(alpha: 0.5)),
+                                    const SizedBox(width: 4),
+                                  ],
+                                  Text(
+                                    slot,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: isBooked ? FontWeight.normal : FontWeight.w500,
+                                      decoration: isBooked ? TextDecoration.lineThrough : null,
+                                      color: isBooked
+                                          ? AppTheme.textMuted.withValues(alpha: 0.5)
+                                          : selected
+                                              ? Colors.white
+                                              : AppTheme.textSecondary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    );
+                  },
                 ),
                 const SizedBox(height: 32),
 

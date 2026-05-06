@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/appointment_provider.dart';
+import '../providers/auth_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/appointment_card.dart';
 import '../widgets/empty_state.dart';
 import 'appointment_detail_screen.dart';
 import 'book_appointment_screen.dart';
+import 'login_screen.dart';
 import 'my_appointments_screen.dart';
 import 'queue_screen.dart';
 import 'admin_screen.dart';
@@ -20,72 +22,130 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
 
-  final List<Widget> _screens = const [
-    _HomeTab(),
-    MyAppointmentsScreen(),
-    QueueScreen(),
-    AdminScreen(),
-  ];
+  List<Widget> _buildScreens(bool isAdmin) => [
+        const _HomeTab(),
+        const MyAppointmentsScreen(),
+        const QueueScreen(),
+        if (isAdmin) const AdminScreen(),
+      ];
+
+  List<BottomNavigationBarItem> _buildNavItems(bool isAdmin) => [
+        const BottomNavigationBarItem(
+          icon: Icon(Icons.home_rounded),
+          label: 'Home',
+        ),
+        const BottomNavigationBarItem(
+          icon: Icon(Icons.calendar_month_rounded),
+          label: 'Appointments',
+        ),
+        const BottomNavigationBarItem(
+          icon: Icon(Icons.queue_rounded),
+          label: 'Queue',
+        ),
+        if (isAdmin)
+          const BottomNavigationBarItem(
+            icon: Icon(Icons.admin_panel_settings_rounded),
+            label: 'Admin',
+          ),
+      ];
+
+  Future<void> _logout(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppTheme.bgCard,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Logout',
+            style: TextStyle(color: AppTheme.textPrimary)),
+        content: const Text('Are you sure you want to logout?',
+            style: TextStyle(color: AppTheme.textSecondary)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.errorColor,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Logout'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && context.mounted) {
+      await context.read<AuthProvider>().logout();
+      Navigator.of(context).pushReplacement(
+        PageRouteBuilder(
+          pageBuilder: (_, __, ___) => const LoginScreen(),
+          transitionsBuilder: (_, animation, __, child) =>
+              FadeTransition(opacity: animation, child: child),
+          transitionDuration: const Duration(milliseconds: 400),
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
-        children: _screens,
-      ),
-      floatingActionButton: _currentIndex == 0 || _currentIndex == 1
-          ? FloatingActionButton.extended(
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (_) => const BookAppointmentScreen()),
-              ).then((_) =>
-                  context.read<AppointmentProvider>().loadAppointments()),
-              icon: const Icon(Icons.add_rounded),
-              label: const Text('Book'),
-              backgroundColor: AppTheme.primaryColor,
-            )
-          : null,
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-      bottomNavigationBar: Container(
-        decoration: const BoxDecoration(
-          color: AppTheme.bgCard,
-          border: Border(top: BorderSide(color: Color(0xFF2A2840), width: 1)),
-        ),
-        child: SafeArea(
-          child: BottomNavigationBar(
-            currentIndex: _currentIndex,
-            onTap: (i) => setState(() => _currentIndex = i),
-            backgroundColor: Colors.transparent,
-            elevation: 0,
-            selectedItemColor: AppTheme.primaryColor,
-            unselectedItemColor: AppTheme.textMuted,
-            type: BottomNavigationBarType.fixed,
-            items: const [
-              BottomNavigationBarItem(
-                icon: Icon(Icons.home_rounded),
-                label: 'Home',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.calendar_month_rounded),
-                label: 'Appointments',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.queue_rounded),
-                label: 'Queue',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.admin_panel_settings_rounded),
-                label: 'Admin',
-              ),
-            ],
+    return Consumer<AuthProvider>(
+      builder: (context, auth, _) {
+        final isAdmin = auth.isAdmin;
+        final screens = _buildScreens(isAdmin);
+        final navItems = _buildNavItems(isAdmin);
+
+        // Keep index in range when switching roles
+        final safeIndex = _currentIndex.clamp(0, screens.length - 1);
+
+        return Scaffold(
+          body: IndexedStack(
+            index: safeIndex,
+            children: screens,
           ),
-        ),
-      ),
+          floatingActionButton: safeIndex == 0 || safeIndex == 1
+              ? FloatingActionButton.extended(
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const BookAppointmentScreen()),
+                  ).then((_) =>
+                      context.read<AppointmentProvider>().loadAppointments()),
+                  icon: const Icon(Icons.add_rounded),
+                  label: const Text('Book'),
+                  backgroundColor: AppTheme.primaryColor,
+                )
+              : null,
+          floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+          bottomNavigationBar: Container(
+            decoration: const BoxDecoration(
+              color: AppTheme.bgCard,
+              border:
+                  Border(top: BorderSide(color: Color(0xFF2A2840), width: 1)),
+            ),
+            child: SafeArea(
+              child: BottomNavigationBar(
+                currentIndex: safeIndex,
+                onTap: (i) => setState(() => _currentIndex = i),
+                backgroundColor: Colors.transparent,
+                elevation: 0,
+                selectedItemColor: AppTheme.primaryColor,
+                unselectedItemColor: AppTheme.textMuted,
+                type: BottomNavigationBarType.fixed,
+                items: navItems,
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
+
 
 class _HomeTab extends StatelessWidget {
   const _HomeTab();
@@ -120,40 +180,174 @@ class _HomeTab extends StatelessWidget {
                       child: SafeArea(
                         child: Padding(
                           padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
+                          child: Consumer<AuthProvider>(
+                            builder: (context, auth, _) {
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
                                     children: [
-                                      const Text(
-                                        'SmartQueue',
-                                        style: TextStyle(
-                                          fontSize: 28,
-                                          fontWeight: FontWeight.bold,
-                                          color: AppTheme.textPrimary,
-                                        ),
+                                      Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          const Text(
+                                            'SmartQueue',
+                                            style: TextStyle(
+                                              fontSize: 28,
+                                              fontWeight: FontWeight.bold,
+                                              color: AppTheme.textPrimary,
+                                            ),
+                                          ),
+                                          Row(
+                                            children: [
+                                              Text(
+                                                'Hi, ${auth.userName.isEmpty ? 'Guest' : auth.userName}',
+                                                style: TextStyle(
+                                                  fontSize: 13,
+                                                  color: AppTheme.textMuted,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                        horizontal: 7,
+                                                        vertical: 2),
+                                                decoration: BoxDecoration(
+                                                  color: auth.isAdmin
+                                                      ? AppTheme.warningColor
+                                                          .withOpacity(0.18)
+                                                      : AppTheme.primaryColor
+                                                          .withOpacity(0.18),
+                                                  borderRadius:
+                                                      BorderRadius.circular(6),
+                                                ),
+                                                child: Text(
+                                                  auth.isAdmin
+                                                      ? 'ADMIN'
+                                                      : 'USER',
+                                                  style: TextStyle(
+                                                    fontSize: 9,
+                                                    fontWeight: FontWeight.w800,
+                                                    color: auth.isAdmin
+                                                        ? AppTheme.warningColor
+                                                        : AppTheme.primaryColor,
+                                                    letterSpacing: 0.5,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
                                       ),
-                                      Text(
-                                        'Manage your appointments',
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          color: AppTheme.textMuted,
-                                        ),
+                                      Row(
+                                        children: [
+                                          // Connectivity badge
+                                          _ConnectivityBadge(
+                                              isConnected: provider.isConnected),
+                                          const SizedBox(width: 8),
+                                          // Logout button
+                                          GestureDetector(
+                                            onTap: () async {
+                                              final confirmed =
+                                                  await showDialog<bool>(
+                                                context: context,
+                                                builder: (_) => AlertDialog(
+                                                  backgroundColor:
+                                                      AppTheme.bgCard,
+                                                  shape: RoundedRectangleBorder(
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                              20)),
+                                                  title: const Text('Logout',
+                                                      style: TextStyle(
+                                                          color: AppTheme
+                                                              .textPrimary)),
+                                                  content: const Text(
+                                                      'Are you sure you want to logout?',
+                                                      style: TextStyle(
+                                                          color: AppTheme
+                                                              .textSecondary)),
+                                                  actions: [
+                                                    TextButton(
+                                                      onPressed: () =>
+                                                          Navigator.pop(
+                                                              context, false),
+                                                      child:
+                                                          const Text('Cancel'),
+                                                    ),
+                                                    ElevatedButton(
+                                                      style: ElevatedButton
+                                                          .styleFrom(
+                                                        backgroundColor:
+                                                            AppTheme.errorColor,
+                                                        foregroundColor:
+                                                            Colors.white,
+                                                        shape: RoundedRectangleBorder(
+                                                            borderRadius:
+                                                                BorderRadius
+                                                                    .circular(
+                                                                        10)),
+                                                      ),
+                                                      onPressed: () =>
+                                                          Navigator.pop(
+                                                              context, true),
+                                                      child:
+                                                          const Text('Logout'),
+                                                    ),
+                                                  ],
+                                                ),
+                                              );
+                                              if (confirmed == true &&
+                                                  context.mounted) {
+                                                await context
+                                                    .read<AuthProvider>()
+                                                    .logout();
+                                                Navigator.of(context)
+                                                    .pushReplacement(
+                                                  PageRouteBuilder(
+                                                    pageBuilder: (_, __, ___) =>
+                                                        const LoginScreen(),
+                                                    transitionsBuilder: (_, anim,
+                                                            __, child) =>
+                                                        FadeTransition(
+                                                            opacity: anim,
+                                                            child: child),
+                                                    transitionDuration:
+                                                        const Duration(
+                                                            milliseconds: 400),
+                                                  ),
+                                                );
+                                              }
+                                            },
+                                            child: Container(
+                                              padding: const EdgeInsets.all(8),
+                                              decoration: BoxDecoration(
+                                                color: AppTheme.errorColor
+                                                    .withOpacity(0.12),
+                                                borderRadius:
+                                                    BorderRadius.circular(10),
+                                                border: Border.all(
+                                                    color: AppTheme.errorColor
+                                                        .withOpacity(0.3)),
+                                              ),
+                                              child: const Icon(
+                                                Icons.logout_rounded,
+                                                size: 18,
+                                                color: AppTheme.errorColor,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ],
                                   ),
-                                  // Connectivity badge
-                                  _ConnectivityBadge(
-                                      isConnected: provider.isConnected),
                                 ],
-                              ),
-                            ],
+                              );
+                            },
                           ),
                         ),
                       ),

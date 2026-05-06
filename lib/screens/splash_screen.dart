@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/appointment_provider.dart';
+import '../providers/auth_provider.dart';
 import '../theme/app_theme.dart';
 import 'home_screen.dart';
+import 'login_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -38,28 +40,35 @@ class _SplashScreenState extends State<SplashScreen>
     );
 
     _controller.forward();
-
     _initialize();
   }
 
   Future<void> _initialize() async {
     await Future.delayed(const Duration(milliseconds: 800));
-    if (mounted) {
-      final provider = context.read<AppointmentProvider>();
-      await provider.initialize();
+
+    if (!mounted) return;
+    final authProvider = context.read<AuthProvider>();
+    final appointmentProvider = context.read<AppointmentProvider>();
+
+    // Check saved session
+    await authProvider.checkSession();
+
+    if (authProvider.isLoggedIn) {
+      await appointmentProvider.initialize();
     }
-    await Future.delayed(const Duration(milliseconds: 600));
-    if (mounted) {
-      Navigator.of(context).pushReplacement(
-        PageRouteBuilder(
-          pageBuilder: (_, __, ___) => const HomeScreen(),
-          transitionsBuilder: (_, animation, __, child) {
-            return FadeTransition(opacity: animation, child: child);
-          },
-          transitionDuration: const Duration(milliseconds: 500),
-        ),
-      );
-    }
+
+    await Future.delayed(const Duration(milliseconds: 400));
+
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(
+      PageRouteBuilder(
+        pageBuilder: (_, __, ___) =>
+            authProvider.isLoggedIn ? const HomeScreen() : const LoginScreen(),
+        transitionsBuilder: (_, animation, __, child) =>
+            FadeTransition(opacity: animation, child: child),
+        transitionDuration: const Duration(milliseconds: 500),
+      ),
+    );
   }
 
   @override
